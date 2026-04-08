@@ -2,21 +2,30 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chewiebro Fancy Widget</title>
+    <title>Chewiebro Fancy Widget - Master Build</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Michroma&family=Orbitron:wght@400;700&display=swap');
-        :root { --navy: #0d121a; --amber: #f39c12; --text-dim: #bdc3c7; }
+        :root { --navy: #0d121a; --amber: #f39c12; --glow-amber: #ff9d00; --text-dim: #bdc3c7; }
         html, body { margin: 0; padding: 0; background-color: transparent !important; overflow: hidden; }
         #widget-container { padding: 40px; }
+        
         #widget {
             width: 320px; background: var(--navy); border-left: 6px solid var(--amber);
             display: flex; flex-direction: column;
-            box-shadow: 0 0 25px rgba(243, 156, 18, 0.2), 8px 8px 20px rgba(0, 0, 0, 0.5);
+            /* STRONGER AMBER GLOW */
+            box-shadow: 0 0 35px rgba(255, 157, 0, 0.4), 8px 8px 20px rgba(0, 0, 0, 0.6);
             background-image: linear-gradient(rgba(243, 156, 18, 0.05) 1px, transparent 1px),
                               linear-gradient(90deg, rgba(243, 156, 18, 0.05) 1px, transparent 1px);
             background-size: 20px 20px;
+            /* THE DANCING BEAT PULSE */
+            animation: beat-pulse 0.96s ease-in-out infinite alternate;
         }
+
+        @keyframes beat-pulse {
+            0% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 157, 0, 0.3); }
+            100% { transform: scale(1.01); box-shadow: 0 0 45px rgba(255, 157, 0, 0.6); }
+        }
+
         #album-art { width: 320px; height: 320px; background-size: cover; background-position: center; box-shadow: inset 0 -40px 60px rgba(13, 18, 26, 0.8); }
         .details { padding: 20px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
         .scroll-container { width: 100%; overflow: hidden; white-space: nowrap; }
@@ -45,73 +54,84 @@
     </div>
 
     <script>
-        const clientId = 'dd694459978f4ed8a13ae5e9a07ababf'; // <--- ADD YOUR ID HERE
+        const clientId = 'YOUR_CLIENT_ID_HERE'; 
         const redirectUri = 'https://chewiebro.github.io/Fancy-Widget/';
 
-        const generateRandomString = (l) => Array.from(crypto.getRandomValues(new Uint8Array(l))).map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
-        const sha256 = async (p) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(p));
-        const base64encode = (i) => btoa(String.fromCharCode(...new Uint8Array(i))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        // Auto-Check Session on Load
+        window.onload = async () => {
+            const refreshToken = localStorage.getItem('refresh_token');
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('code')) { await exchangeToken(urlParams.get('code')); }
+            else if (refreshToken) { await refreshAccessToken(); }
+        };
 
         document.getElementById('login-btn').addEventListener('click', async () => {
-            const v = generateRandomString(64);
-            const hashed = await sha256(v);
+            const v = Array.from(crypto.getRandomValues(new Uint8Array(64))).map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
+            const hashed = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+            const challenge = btoa(String.fromCharCode(...new Uint8Array(hashed))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
             window.localStorage.setItem('code_verifier', v);
-            const params = new URLSearchParams({
-                response_type: 'code', client_id: clientId, scope: 'user-read-currently-playing user-read-playback-state',
-                code_challenge_method: 'S256', code_challenge: base64encode(hashed), redirect_uri: redirectUri,
-            });
-            // OFFICIAL URL:
-            window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
+            window.location.href = `https://accounts.spotify.com/authorize?${new URLSearchParams({response_type:'code', client_id:clientId, scope:'user-read-currently-playing user-read-playback-state', code_challenge_method:'S256', code_challenge:challenge, redirect_uri:redirectUri}).toString()}`;
         });
-
-        const code = new URLSearchParams(window.location.search).get('code');
-        if (code) exchangeToken(code);
 
         async function exchangeToken(code) {
             const v = window.localStorage.getItem('code_verifier');
             const res = await fetch('https://accounts.spotify.com/api/token', {
-                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ client_id: clientId, grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: v }),
+                method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({client_id:clientId, grant_type:'authorization_code', code, redirect_uri:redirectUri, code_verifier:v})
             });
-            const data = await res.json();
-            if (data.access_token) {
-                window.localStorage.setItem('access_token', data.access_token);
+            const d = await res.json();
+            if (d.access_token) {
+                localStorage.setItem('access_token', d.access_token);
+                localStorage.setItem('refresh_token', d.refresh_token);
                 window.history.replaceState({}, document.title, "/Fancy-Widget/");
-                startWidget(data.access_token);
+                startWidget();
             }
         }
 
-        function startWidget(token) {
-            document.getElementById('login-btn').classList.add('hidden');
-            document.getElementById('widget').classList.remove('hidden');
-            setInterval(() => updatePlayback(token), 3000);
-            updatePlayback(token);
+        async function refreshAccessToken() {
+            const rt = localStorage.getItem('refresh_token');
+            const res = await fetch('https://accounts.spotify.com/api/token', {
+                method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({client_id:clientId, grant_type:'refresh_token', refresh_token:rt})
+            });
+            const d = await res.json();
+            if (d.access_token) {
+                localStorage.setItem('access_token', d.access_token);
+                if (d.refresh_token) localStorage.setItem('refresh_token', d.refresh_token);
+                startWidget();
+            }
         }
 
-        async function updatePlayback(token) {
-            try {
-                const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.status === 204 || res.status > 400) return;
-                const d = await res.json();
-                const trackEl = document.getElementById('track-name');
-                const tName = d.item.name;
-                if (tName.length > 18) {
-                    trackEl.innerText = tName + " \u00A0 // \u00A0 " + tName + " \u00A0 // \u00A0 ";
-                    trackEl.classList.add('animate');
-                } else { trackEl.innerText = tName; trackEl.classList.remove('animate'); }
+        function startWidget() {
+            document.getElementById('login-btn').classList.add('hidden');
+            document.getElementById('widget').classList.remove('hidden');
+            setInterval(updatePlayback, 3000);
+            updatePlayback();
+        }
 
-                const artistEl = document.getElementById('artist-name');
-                const aName = d.item.artists.map(a => a.name).join(', ');
-                if (aName.length > 25) {
-                    artistEl.innerText = aName + " \u00A0 // \u00A0 " + aName + " \u00A0 // \u00A0 ";
-                    artistEl.classList.add('animate');
-                } else { artistEl.innerText = aName; artistEl.classList.remove('animate'); }
+        async function updatePlayback() {
+            const t = localStorage.getItem('access_token');
+            const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: {'Authorization': `Bearer ${t}`} });
+            if (res.status === 401) { await refreshAccessToken(); return; }
+            if (res.status === 204) return;
+            const d = await res.json();
+            
+            const trackEl = document.getElementById('track-name');
+            const tName = d.item.name;
+            if (tName.length > 18) {
+                trackEl.innerText = tName + " \u00A0 // \u00A0 " + tName + " \u00A0 // \u00A0 ";
+                trackEl.classList.add('animate');
+            } else { trackEl.innerText = tName; trackEl.classList.remove('animate'); }
 
-                document.getElementById('album-art').style.backgroundImage = `url(${d.item.album.images[0].url})`;
-                document.getElementById('progress-bar').style.width = (d.progress_ms / d.item.duration_ms) * 100 + '%';
-            } catch (err) { }
+            const artistEl = document.getElementById('artist-name');
+            const aName = d.item.artists.map(a => a.name).join(', ');
+            if (aName.length > 25) {
+                artistEl.innerText = aName + " \u00A0 // \u00A0 " + aName + " \u00A0 // \u00A0 ";
+                artistEl.classList.add('animate');
+            } else { artistEl.innerText = aName; artistEl.classList.remove('animate'); }
+
+            document.getElementById('album-art').style.backgroundImage = `url(${d.item.album.images[0].url})`;
+            document.getElementById('progress-bar').style.width = (d.progress_ms / d.item.duration_ms) * 100 + '%';
         }
     </script>
 </body>
