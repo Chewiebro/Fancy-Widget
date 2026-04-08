@@ -10,7 +10,7 @@
         :root {
             --navy: #0d121a;
             --amber: #f39c12;
-            --text-dim: #bdc3c7; /* Slate Silver */
+            --text-dim: #bdc3c7;
         }
 
         html, body {
@@ -19,17 +19,13 @@
             overflow: hidden;
         }
 
-        #widget-container {
-            padding: 40px; /* Space for the glow */
-        }
+        #widget-container { padding: 40px; }
 
         #widget {
             width: 320px;
             background: var(--navy);
             border-left: 6px solid var(--amber);
-            display: flex; 
-            flex-direction: column;
-            /* GLOW CONTROL: Adjust the 0.2 and 0.5 for brightness/shadow */
+            display: flex; flex-direction: column;
             box-shadow: 0 0 25px rgba(243, 156, 18, 0.2), 8px 8px 20px rgba(0, 0, 0, 0.5);
             background-image: linear-gradient(rgba(243, 156, 18, 0.05) 1px, transparent 1px),
                               linear-gradient(90deg, rgba(243, 156, 18, 0.05) 1px, transparent 1px);
@@ -38,23 +34,15 @@
 
         #album-art { 
             width: 320px; height: 320px; 
-            background-size: cover;
-            background-position: center;
+            background-size: cover; background-position: center;
             box-shadow: inset 0 -40px 60px rgba(13, 18, 26, 0.8);
         }
 
         .details { padding: 20px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
 
-        .scroll-container {
-            width: 100%;
-            overflow: hidden;
-            white-space: nowrap;
-        }
+        .scroll-container { width: 100%; overflow: hidden; white-space: nowrap; }
 
-        #track-name, #artist-name {
-            display: inline-block;
-            will-change: transform;
-        }
+        #track-name, #artist-name { display: inline-block; will-change: transform; }
 
         #track-name {
             font-family: 'Orbitron', sans-serif;
@@ -69,10 +57,7 @@
             margin-bottom: 15px;
         }
 
-        /* Fluid Animation Fix */
-        .animate {
-            animation: marquee 15s linear infinite;
-        }
+        .animate { animation: marquee 15s linear infinite; }
 
         @keyframes marquee {
             0% { transform: translateX(0); }
@@ -86,7 +71,7 @@
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: var(--amber); border: none; padding: 15px 30px;
             color: var(--navy); cursor: pointer; font-family: 'Orbitron', sans-serif;
-            font-weight: bold; border-radius: 4px;
+            font-weight: bold; border-radius: 4px; z-index: 999;
         }
         .hidden { display: none !important; }
     </style>
@@ -111,8 +96,9 @@
     </div>
 
     <script>
-        const clientId = 'dd694459978f4ed8a13ae5e9a07ababf'; // <--- PASTE CLIENT ID HERE
-        const redirectUri = 'https://chewiebro.github.io/Fancy-Widget/;
+        // --- THE CORRECTED CONFIGURATION ---
+        const clientId = 'dd694459978f4ed8a13ae5e9a07ababf'; 
+        const redirectUri = 'https://chewiebro.github.io/Fancy-Widget/';
 
         const generateRandomString = (l) => Array.from(crypto.getRandomValues(new Uint8Array(l))).map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
         const sha256 = async (p) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(p));
@@ -122,7 +108,17 @@
             const v = generateRandomString(64);
             const hashed = await sha256(v);
             window.localStorage.setItem('code_verifier', v);
-            const params = new URLSearchParams({ response_type: 'code', client_id: clientId, scope: 'user-read-currently-playing user-read-playback-state', code_challenge_method: 'S256', code_challenge: base64encode(hashed), redirect_uri: redirectUri });
+            
+            const params = new URLSearchParams({
+                response_type: 'code',
+                client_id: clientId,
+                scope: 'user-read-currently-playing user-read-playback-state',
+                code_challenge_method: 'S256',
+                code_challenge: base64encode(hashed),
+                redirect_uri: redirectUri,
+            });
+
+            // --- OFFICIAL SPOTIFY AUTH LINK ---
             window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
         });
 
@@ -131,14 +127,24 @@
 
         async function exchangeToken(code) {
             const v = window.localStorage.getItem('code_verifier');
+            
+            // --- OFFICIAL SPOTIFY TOKEN LINK ---
             const res = await fetch('https://accounts.spotify.com/api/token', {
-                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ client_id: clientId, grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: v }),
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    client_id: clientId,
+                    grant_type: 'authorization_code',
+                    code,
+                    redirect_uri: redirectUri,
+                    code_verifier: v
+                }),
             });
-            const data = await res.json();
+            
+            const data = await response.json();
             if (data.access_token) {
                 window.localStorage.setItem('access_token', data.access_token);
-                window.history.replaceState({}, document.title, "/");
+                window.history.replaceState({}, document.title, "/Fancy-Widget/");
                 startWidget(data.access_token);
             }
         }
@@ -152,17 +158,17 @@
 
         async function updatePlayback(token) {
             try {
+                // --- OFFICIAL SPOTIFY API LINK ---
                 const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                
                 if (res.status === 204 || res.status > 400) return;
                 const d = await res.json();
 
-                // Fluid Track Scroll
                 const trackEl = document.getElementById('track-name');
                 const tName = d.item.name;
                 if (tName.length > 18) {
-                    // The trick: Put the gap INSIDE the text and remove CSS padding-right
                     trackEl.innerText = tName + " \u00A0 // \u00A0 " + tName + " \u00A0 // \u00A0 ";
                     trackEl.classList.add('animate');
                 } else {
@@ -170,7 +176,6 @@
                     trackEl.classList.remove('animate');
                 }
 
-                // Fluid Artist Scroll
                 const artistEl = document.getElementById('artist-name');
                 const aName = d.item.artists.map(a => a.name).join(', ');
                 if (aName.length > 25) {
